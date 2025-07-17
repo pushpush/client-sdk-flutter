@@ -593,6 +593,29 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
     await room.engine.sendDataPacket(packet, reliability: publishReliably ? Reliability.reliable : Reliability.lossy);
   }
 
+  /// Publish a new chat message to the room.
+  /// igrored attachedFiles https://github.com/livekit/protocol/blob/main/protobufs/livekit_models.proto#L353
+  /// @param chat ChatMessage
+  Future<void> chatMessage(
+    ChatMessage chat,
+  ) async {
+    var chatMessage = lk_models.ChatMessage(
+      id: chat.id,
+      message: chat.message,
+      timestamp: Int64(chat.timestamp),
+    );
+
+    if (chat.editTimestamp != null) {
+      chatMessage.editTimestamp = Int64(chat.editTimestamp ?? 0);
+    }
+
+    final packet = lk_models.DataPacket(
+      chatMessage: chatMessage,
+    );
+
+    await room.engine.sendDataPacket(packet, reliability: true);
+  }
+
   /// Sets and updates the metadata of the local participant.
   /// Note: this requires `CanUpdateOwnMetadata` permission encoded in the token.
   /// @param metadata

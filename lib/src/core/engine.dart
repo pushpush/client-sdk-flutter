@@ -924,6 +924,14 @@ class Engine extends Disposable with EventsEmittable<EngineEvent> {
           encryptionType: encryptionType,
         ),
       );
+    } else if (dp.whichValue() == lk_models.DataPacket_Value.chatMessage) {
+      // Data Stream trailer
+      events.emit(
+        EngineChatMessageEvent(
+          chatMessage: dp.chatMessage,
+          identity: dp.participantIdentity,
+        ),
+      );
     } else {
       logger.warning('Unknown data packet type: ${dp.whichValue()}');
     }

@@ -434,6 +434,35 @@ class DataReceivedEvent with RoomEvent, ParticipantEvent {
       '(participant: ${participant}, topic: ${topic}, data: ${data})';
 }
 
+class ChatMessagePublished {
+  String id;
+  int timestamp;
+  String message;
+  int? editTimestamp;
+  ChatMessagePublished({
+    required this.id,
+    required this.timestamp,
+    required this.message,
+    this.editTimestamp,
+  });
+}
+
+/// Chat message from  [RemoteParticipant].
+/// Emitted by [Room] and [RemoteParticipant].
+class ChatMessageEvent with RoomEvent, ParticipantEvent {
+  /// Sender of the data. This may be null if data is sent from Server API.
+  final RemoteParticipant? participant;
+  final ChatMessagePublished chatMessage;
+  const ChatMessageEvent({
+    required this.participant,
+    required this.chatMessage,
+  });
+
+  @override
+  String toString() => '${runtimeType}'
+      '(participant: ${participant}, chatMessage: ${chatMessage})';
+}
+
 /// The participant's isSpeaking property has changed
 /// Emitted by [Participant].
 class SpeakingChangedEvent with ParticipantEvent {

@@ -531,6 +531,16 @@ class EngineDataStreamTrailerEvent with EngineEvent, InternalEvent {
 }
 
 @internal
+class EngineChatMessageEvent with EngineEvent, InternalEvent {
+  final String identity;
+  final lk_models.ChatMessage chatMessage;
+  const EngineChatMessageEvent({
+    required this.identity,
+    required this.chatMessage,
+  });
+}
+
+@internal
 abstract class DataChannelStateUpdatedEvent with EngineEvent, InternalEvent {
   final bool isPrimary;
   final Reliability type;

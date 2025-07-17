@@ -569,6 +569,7 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
     ..on<EngineActiveSpeakersUpdateEvent>(
         (event) => _onEngineActiveSpeakersUpdateEvent(event.speakers))
     ..on<EngineDataPacketReceivedEvent>(_onDataMessageEvent)
+    ..on<EngineChatMessageEvent>(_onChatMessageEvent)
     ..on<EngineTranscriptionReceivedEvent>(_onTranscriptionEvent)
     ..on<AudioPlaybackStarted>((event) {
       _handleAudioPlaybackStarted();
@@ -888,6 +889,29 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
       participant: senderParticipant,
       data: dataPacketEvent.packet.payload,
       topic: dataPacketEvent.packet.topic,
+    );
+
+    senderParticipant?.events.emit(event);
+    events.emit(event);
+  }
+
+  void _onChatMessageEvent(EngineChatMessageEvent chatMessageEvent) {
+    // participant may be null if data is sent from Server-API
+    RemoteParticipant? senderParticipant;
+    if (chatMessageEvent.identity.isNotEmpty) {
+      senderParticipant = getParticipantByIdentity(chatMessageEvent.identity)
+          as RemoteParticipant?;
+    }
+
+    final chatMessage = chatMessageEvent.chatMessage;
+    final event = ChatMessageEvent(
+      participant: senderParticipant,
+      chatMessage: ChatMessagePublished(
+        id: chatMessage.id,
+        message: chatMessage.message,
+        timestamp: chatMessage.timestamp.toInt(),
+        editTimestamp: chatMessage.editTimestamp.toInt(),
+      ),
     );
 
     senderParticipant?.events.emit(event);

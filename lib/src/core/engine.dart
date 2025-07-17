@@ -925,7 +925,7 @@ class Engine extends Disposable with EventsEmittable<EngineEvent> {
         ),
       );
     } else if (dp.whichValue() == lk_models.DataPacket_Value.chatMessage) {
-      // Data Stream trailer
+      // Chat Message
       events.emit(
         EngineChatMessageEvent(
           chatMessage: dp.chatMessage,

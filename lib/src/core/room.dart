@@ -906,7 +906,7 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
     final chatMessage = chatMessageEvent.chatMessage;
     final event = ChatMessageEvent(
       participant: senderParticipant,
-      chatMessage: ChatMessagePublished(
+      chatMessage: ChatMessageModal(
         id: chatMessage.id,
         message: chatMessage.message,
         timestamp: chatMessage.timestamp.toInt(),

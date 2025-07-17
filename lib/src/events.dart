@@ -434,12 +434,12 @@ class DataReceivedEvent with RoomEvent, ParticipantEvent {
       '(participant: ${participant}, topic: ${topic}, data: ${data})';
 }
 
-class ChatMessagePublished {
+class ChatMessageModal {
   String id;
   int timestamp;
   String message;
   int? editTimestamp;
-  ChatMessagePublished({
+  ChatMessageModal({
     required this.id,
     required this.timestamp,
     required this.message,
@@ -452,7 +452,7 @@ class ChatMessagePublished {
 class ChatMessageEvent with RoomEvent, ParticipantEvent {
   /// Sender of the data. This may be null if data is sent from Server API.
   final RemoteParticipant? participant;
-  final ChatMessagePublished chatMessage;
+  final ChatMessageModal chatMessage;
   const ChatMessageEvent({
     required this.participant,
     required this.chatMessage,

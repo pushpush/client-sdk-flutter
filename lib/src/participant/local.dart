@@ -613,7 +613,7 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
       chatMessage: chatMessage,
     );
 
-    await room.engine.sendDataPacket(packet, reliability: true);
+    await room.engine.sendDataPacket(packet, reliability: Reliability.reliable);
   }
 
   /// Sets and updates the metadata of the local participant.

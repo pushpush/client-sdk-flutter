@@ -29,6 +29,22 @@ public class Visualizer: NSObject, RTCAudioRenderer, FlutterStreamHandler {
     private var eventSink: FlutterEventSink?
 
     private var channel: FlutterEventChannel?
+    
+    // Flag to prevent race conditions when stopping
+    private let isStopped = NSLock()
+    private var _stopped: Bool = false
+    private var stopped: Bool {
+        get {
+            isStopped.lock()
+            defer { isStopped.unlock() }
+            return _stopped
+        }
+        set {
+            isStopped.lock()
+            defer { isStopped.unlock() }
+            _stopped = newValue
+        }
+    }
 
     public func onListen(withArguments _: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         eventSink = events
@@ -70,10 +86,28 @@ public class Visualizer: NSObject, RTCAudioRenderer, FlutterStreamHandler {
     }
 
     deinit {
+        cleanup()
+    }
+    
+    func cleanup() {
+        // Mark as stopped to prevent race conditions
+        stopped = true
+        
+        // Remove from track first
         _track?.remove(audioRenderer: self)
+        
+        // Release FlutterEventChannel
+        channel?.setStreamHandler(nil)
+        channel = nil
+        
+        // Clear eventSink
+        eventSink = nil
     }
 
     public func render(pcmBuffer: AVAudioPCMBuffer) {
+        // Early return if stopped to prevent race conditions
+        guard !stopped else { return }
+        
         let newBands = _processor.process(pcmBuffer: pcmBuffer)
         guard var newBands else { return }
 
@@ -83,16 +117,20 @@ public class Visualizer: NSObject, RTCAudioRenderer, FlutterStreamHandler {
             newBands = centerBands(newBands)
         }
 
+        // Capture eventSink locally to avoid race condition
+        guard let sink = eventSink else { return }
+        
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-
+            guard let self, !self.stopped else { return }
+            
+            // Use captured sink to avoid race condition with eventSink
             bands = zip(bands, newBands).map { old, new in
                 if self.smoothTransition {
                     return self._smoothTransition(from: old, to: new, factor: self.smoothingFactor)
                 }
                 return new
             }
-            eventSink?(bands)
+            sink(bands)
         }
     }
 

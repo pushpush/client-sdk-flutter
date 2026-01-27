@@ -43,6 +43,21 @@ class AudioProcessors {
     init(track: AudioTrack) {
         self.track = track
     }
+    
+    /// Clean up all processors and release resources
+    func cleanup() {
+        // Clean up all visualizers
+        for (_, visualizer) in visualizers {
+            visualizer.cleanup()
+        }
+        visualizers.removeAll()
+        
+        // Clean up all renderers
+        for (_, renderer) in renderers {
+            renderer.detach()
+        }
+        renderers.removeAll()
+    }
 }
 
 @available(iOS 13.0, *)
@@ -201,7 +216,11 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
         }
 
         for processors in audioProcessors.values {
-            processors.visualizers.removeValue(forKey: visualizerId)
+            if let visualizer = processors.visualizers[visualizerId] {
+                // Explicitly cleanup resources before removing
+                visualizer.cleanup()
+                processors.visualizers.removeValue(forKey: visualizerId)
+            }
         }
 
         result(true)

@@ -448,25 +448,28 @@ class DataReceivedEvent with RoomEvent, ParticipantEvent {
       '(participant: ${participant}, topic: ${topic}, data: ${data})';
 }
 
-class ChatMessageModal {
-  String id;
-  int timestamp;
-  String message;
-  int? editTimestamp;
-  ChatMessageModal({
+class ChatMessageModel {
+  final String id;
+  final int timestamp;
+  final String message;
+  final int? editTimestamp;
+  const ChatMessageModel({
     required this.id,
     required this.timestamp,
     required this.message,
     this.editTimestamp,
   });
+
+  @override
+  String toString() => 'ChatMessageModel(id: ${id}, message: ${message})';
 }
 
-/// Chat message from  [RemoteParticipant].
+/// Chat message from [RemoteParticipant].
 /// Emitted by [Room] and [RemoteParticipant].
 class ChatMessageEvent with RoomEvent, ParticipantEvent {
   /// Sender of the data. This may be null if data is sent from Server API.
   final RemoteParticipant? participant;
-  final ChatMessageModal chatMessage;
+  final ChatMessageModel chatMessage;
   const ChatMessageEvent({
     required this.participant,
     required this.chatMessage,

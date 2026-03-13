@@ -651,19 +651,17 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
   }
 
   /// Publish a new chat message to the room.
-  /// igrored attachedFiles https://github.com/livekit/protocol/blob/main/protobufs/livekit_models.proto#L353
-  /// @param chat ChatMessage
-  Future<void> chatMessage(
-    ChatMessage chat,
-  ) async {
-    var chatMessage = lk_models.ChatMessage(
+  /// Note: attachedFiles are currently ignored.
+  /// See https://github.com/livekit/protocol/blob/main/protobufs/livekit_models.proto#L353
+  Future<void> sendChatMessage(ChatMessage chat) async {
+    final chatMessage = lk_models.ChatMessage(
       id: chat.id,
       message: chat.message,
       timestamp: Int64(chat.timestamp),
     );
 
     if (chat.editTimestamp != null) {
-      chatMessage.editTimestamp = Int64(chat.editTimestamp ?? 0);
+      chatMessage.editTimestamp = Int64(chat.editTimestamp!);
     }
 
     final packet = lk_models.DataPacket(

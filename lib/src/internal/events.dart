@@ -741,6 +741,9 @@ class EngineChatMessageEvent with EngineEvent, InternalEvent {
     required this.identity,
     required this.chatMessage,
   });
+
+  @override
+  String toString() => '${runtimeType}(chatMessage: ${chatMessage}, identity: ${identity})';
 }
 
 @internal

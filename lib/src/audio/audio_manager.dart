@@ -24,8 +24,10 @@ import 'audio_engine_availability.dart';
 import 'audio_processing_state.dart';
 import 'audio_session.dart';
 import 'audio_session_policy.dart';
+import 'microphone_mute_mode.dart';
 
 export 'audio_engine_availability.dart';
+export 'microphone_mute_mode.dart';
 
 /// Snapshot of the WebRTC audio engine's playout/recording state.
 ///
@@ -358,6 +360,50 @@ class AudioManager {
         forceSpeakerOutput: _forceSpeakerOutput && _preferSpeakerOutput,
         automatic: _isAutomaticConfigurationEnabled,
       );
+
+  /// How microphone input is muted on iOS/macOS.
+  ///
+  /// Returns [MicrophoneMuteMode.unknown] on other platforms.
+  Future<MicrophoneMuteMode> getMicrophoneMuteMode() async {
+    if (!lkPlatformIsApple()) return MicrophoneMuteMode.unknown;
+    final mode = await Native.getMicrophoneMuteMode();
+    return MicrophoneMuteMode.values.firstWhere(
+      (value) => value.name == mode,
+      orElse: () => MicrophoneMuteMode.unknown,
+    );
+  }
+
+  /// Sets how microphone input is muted on iOS/macOS. No-op elsewhere,
+  /// including for [MicrophoneMuteMode.unknown], so
+  /// `setMicrophoneMuteMode(await getMicrophoneMuteMode())` round-trips
+  /// safely on every platform.
+  ///
+  /// The default, [MicrophoneMuteMode.voiceProcessing], plays the platform's
+  /// mute/unmute sound effect and keeps the microphone observable for
+  /// muted-talker detection. Use [MicrophoneMuteMode.inputMixer] or
+  /// [MicrophoneMuteMode.restart] to mute silently.
+  ///
+  /// The mode applies whenever the engine mutes microphone input, which
+  /// includes LiveKit's own mute path: muting a published local audio track
+  /// (e.g. `LocalParticipant.setMicrophoneEnabled(false)`) disables the
+  /// track, and WebRTC mutes the engine input using this mode. With the
+  /// default `AudioCaptureOptions.stopAudioCaptureOnMute` (true) the capture
+  /// is additionally stopped after muting. For the fastest silent mute
+  /// toggling combine [MicrophoneMuteMode.inputMixer] with
+  /// `stopAudioCaptureOnMute: false`. Note that [MicrophoneMuteMode.restart]
+  /// restarts the audio engine on every mute toggle, which also
+  /// reconfigures the audio session (audible route changes on e.g.
+  /// Bluetooth headsets).
+  ///
+  /// Throws if the native side rejects the change, so callers never assume
+  /// a muting behavior that is not actually in effect.
+  ///
+  /// This is engine-wide state. Prefer setting it once before connecting.
+  Future<void> setMicrophoneMuteMode(MicrophoneMuteMode mode) async {
+    if (mode == MicrophoneMuteMode.unknown) return;
+    if (!lkPlatformIsApple()) return;
+    await Native.setMicrophoneMuteMode(mode.name);
+  }
 
   /// Diagnostic snapshot of the resolved audio processing state.
   ///

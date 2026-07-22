@@ -591,6 +591,13 @@ void main() {
       expect(calls.single.arguments, {'enable': true, 'force': true});
     });
 
+    test('passes microphone mute mode to platform method', () async {
+      await Native.setMicrophoneMuteMode('inputMixer');
+
+      expect(calls.single.method, 'setMicrophoneMuteMode');
+      expect(calls.single.arguments, {'mode': 'inputMixer'});
+    });
+
     test('passes session activation ownership to Apple management method', () async {
       await Native.setAppleAudioSessionAutomaticManagementEnabled(true, sessionActivationEnabled: false);
 

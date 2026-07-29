@@ -22,6 +22,7 @@ import android.os.Looper
 import androidx.annotation.NonNull
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -52,6 +53,9 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
   private var audioDeviceModuleExecutor: ExecutorService? = null
   private val mainHandler = Handler(Looper.getMainLooper())
 
+  private var deviceChangeEventChannel: EventChannel? = null
+  private var deviceChangeEventSink: EventChannel.EventSink? = null
+
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
   /// This local reference serves to register the plugin with the Flutter Engine and unregister it
@@ -65,9 +69,34 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "livekit_client")
     channel.setMethodCallHandler(this)
     binaryMessenger = flutterPluginBinding.binaryMessenger
-    audioSwitchManager = LKAudioSwitchManager(flutterPluginBinding.applicationContext)
+    audioSwitchManager = LKAudioSwitchManager(flutterPluginBinding.applicationContext).also { manager ->
+      manager.deviceChangeListener = { snapshot -> forwardDeviceChange(snapshot) }
+    }
+    deviceChangeEventChannel = EventChannel(
+      flutterPluginBinding.binaryMessenger,
+      "livekit_client/android_audio_devices",
+    ).also { eventChannel ->
+      eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+        override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+          deviceChangeEventSink = events
+          // Emit the last known snapshot immediately so listeners started
+          // after a device change do not miss the current state.
+          audioSwitchManager?.devicesSnapshot()?.let { events?.success(it) }
+        }
+
+        override fun onCancel(arguments: Any?) {
+          deviceChangeEventSink = null
+        }
+      })
+    }
     audioDeviceModuleExecutor?.shutdown()
     audioDeviceModuleExecutor = Executors.newSingleThreadExecutor()
+  }
+
+  private fun forwardDeviceChange(snapshot: Map<String, Any?>) {
+    // deviceChangeListener runs on the main thread already; guard against
+    // null sink for listeners that have not attached yet.
+    deviceChangeEventSink?.success(snapshot)
   }
 
   @SuppressLint("SuspiciousIndentation")
@@ -460,6 +489,29 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         result.success(null)
       }
 
+      "activateAndroidAudioSession" -> {
+        // Idempotent activation without touching the current configuration.
+        // Used by app-level code that wants MODE_IN_COMMUNICATION / audio
+        // focus / device routing before `Room.connect` runs
+        // `NativeAudioManagement.start()` (e.g. the lobby preview mic).
+        audioSwitchManager?.start()
+        result.success(null)
+      }
+
+      "selectAndroidAudioDevice" -> {
+        val kind = call.argument<String>("kind")
+        if (kind == null) {
+          result.error("INVALID_ARGUMENT", "kind is required", null)
+        } else {
+          audioSwitchManager?.selectDevice(kind)
+          result.success(null)
+        }
+      }
+
+      "getAndroidAudioDevices" -> {
+        result.success(audioSwitchManager?.devicesSnapshot() ?: emptyMap<String, Any?>())
+      }
+
       else -> {
         result.notImplemented()
       }
@@ -468,6 +520,10 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+
+    deviceChangeEventChannel?.setStreamHandler(null)
+    deviceChangeEventChannel = null
+    deviceChangeEventSink = null
 
     audioSwitchManager?.dispose()
     audioSwitchManager = null

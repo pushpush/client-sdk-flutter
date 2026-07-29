@@ -438,4 +438,141 @@ class AudioManager {
     if (response == null) return null;
     return AudioProcessingState.fromMap(response);
   }
+
+  Stream<AndroidAudioDevices>? _androidAudioDevicesStream;
+
+  /// Idempotently activates LiveKit's Android audio session before the room
+  /// is connected. Useful when the app wants MODE_IN_COMMUNICATION / focus /
+  /// AudioSwitch device routing while a lobby preview microphone is running.
+  ///
+  /// No-op on other platforms.
+  Future<void> activateAndroidAudioSession() => Native.activateAndroidAudioSession();
+
+  /// Releases LiveKit's Android audio session (audio focus, communication
+  /// mode, and AudioSwitch device routing). Unlike [deactivateAudioSession]
+  /// this does not switch [managementMode] to manual, so subsequent
+  /// `Room.connect` calls still let LiveKit configure and activate the
+  /// session automatically.
+  ///
+  /// No-op on other platforms.
+  Future<void> deactivateAndroidAudioSession() async {
+    if (!lkPlatformIs(PlatformType.android)) return;
+    await Native.stopAndroidAudioSession();
+  }
+
+  /// Explicitly routes Android audio playout to [kind]
+  /// (`bluetooth`/`wired`/`speaker`/`earpiece`).
+  ///
+  /// Unlike [setSpeakerOutputPreferred], which only nudges AudioSwitch's
+  /// preferred-device list, this pins a specific device. The selection is
+  /// sticky across live reconfigure, hot-plug, and session restart. When the
+  /// requested device is not currently available the intent is remembered so
+  /// it activates the moment the device attaches.
+  ///
+  /// No-op on other platforms.
+  Future<void> selectAndroidAudioOutput(String kind) => Native.selectAndroidAudioOutput(kind);
+
+  /// Reads the current AudioSwitch snapshot on Android.
+  ///
+  /// Returns an [AndroidAudioDevices] with the available device kinds, the
+  /// currently active output, and the sticky user selection. Empty on other
+  /// platforms.
+  Future<AndroidAudioDevices> getAndroidAudioDevices() async {
+    final map = await Native.getAndroidAudioDevices();
+    return AndroidAudioDevices.fromMap(map);
+  }
+
+  /// Broadcast stream of AudioSwitch snapshots on Android. The stream is a
+  /// single, shared broadcast so late subscribers see the most recent event
+  /// via the native `onListen` replay.
+  ///
+  /// Empty stream on other platforms.
+  Stream<AndroidAudioDevices> get androidAudioDevicesStream {
+    if (!lkPlatformIs(PlatformType.android)) return const Stream.empty();
+    return _androidAudioDevicesStream ??= Native.androidAudioDevicesEventChannel
+        .receiveBroadcastStream()
+        .map((dynamic event) {
+      if (event is Map) {
+        return AndroidAudioDevices.fromMap(
+          event.map((key, value) => MapEntry(key.toString(), value)),
+        );
+      }
+      return const AndroidAudioDevices.empty();
+    });
+  }
+}
+
+/// Kind of an Android audio device, mirroring the AudioSwitch device classes.
+enum AndroidAudioDeviceKind {
+  bluetooth,
+  wired,
+  speaker,
+  earpiece;
+
+  static AndroidAudioDeviceKind? fromWire(String? value) => switch (value) {
+        'bluetooth' => bluetooth,
+        'wired' => wired,
+        'speaker' => speaker,
+        'earpiece' => earpiece,
+        _ => null,
+      };
+
+  String get wire => name;
+}
+
+/// One Android audio device entry.
+class AndroidAudioDevice {
+  final AndroidAudioDeviceKind kind;
+  final String? name;
+
+  const AndroidAudioDevice({required this.kind, this.name});
+
+  static AndroidAudioDevice? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final kind = AndroidAudioDeviceKind.fromWire(raw['kind']?.toString());
+    if (kind == null) return null;
+    return AndroidAudioDevice(kind: kind, name: raw['name']?.toString());
+  }
+
+  @override
+  String toString() => 'AndroidAudioDevice(kind: ${kind.wire}, name: $name)';
+}
+
+/// Snapshot of the current AudioSwitch state on Android.
+class AndroidAudioDevices {
+  /// Currently available devices, ordered by AudioSwitch priority.
+  final List<AndroidAudioDevice> available;
+
+  /// Device to which AudioSwitch is currently routing playout, if any.
+  final AndroidAudioDevice? selected;
+
+  /// Sticky user selection, when the app has pinned a device explicitly.
+  final AndroidAudioDeviceKind? userSelected;
+
+  const AndroidAudioDevices({
+    required this.available,
+    required this.selected,
+    required this.userSelected,
+  });
+
+  const AndroidAudioDevices.empty()
+      : available = const <AndroidAudioDevice>[],
+        selected = null,
+        userSelected = null;
+
+  factory AndroidAudioDevices.fromMap(Map<String, dynamic> map) {
+    final availableRaw = map['available'];
+    final available = <AndroidAudioDevice>[];
+    if (availableRaw is List) {
+      for (final entry in availableRaw) {
+        final device = AndroidAudioDevice.fromMap(entry);
+        if (device != null) available.add(device);
+      }
+    }
+    return AndroidAudioDevices(
+      available: List<AndroidAudioDevice>.unmodifiable(available),
+      selected: AndroidAudioDevice.fromMap(map['selected']),
+      userSelected: AndroidAudioDeviceKind.fromWire(map['userSelected']?.toString()),
+    );
+  }
 }

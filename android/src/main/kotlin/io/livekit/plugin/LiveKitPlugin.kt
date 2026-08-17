@@ -19,6 +19,7 @@ package io.livekit.plugin
 import android.annotation.SuppressLint
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.annotation.NonNull
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -45,6 +46,10 @@ import java.util.concurrent.RejectedExecutionException
 
 /** LiveKitPlugin */
 class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
+  companion object {
+    private const val TAG = "LiveKitPlugin"
+  }
+
   private var audioProcessors = mutableMapOf<String, AudioProcessors>()
   private var flutterWebRTCPlugin = FlutterWebRTCPlugin.sharedSingleton
   private var binaryMessenger: BinaryMessenger? = null
@@ -83,29 +88,43 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     val isCentered = call.argument<Boolean>("isCentered") ?: true
     var smoothTransition = call.argument<Boolean>("smoothTransition") ?: true
 
-    val processors = getAudioProcessors(trackId)
-    if (processors == null) {
-      result.error("INVALID_ARGUMENT", "track not found", null)
-      return
+    var lastError: Exception? = null
+    for (attempt in 0..1) {
+      val processors = getAudioProcessors(trackId, forceRefresh = attempt > 0)
+      if (processors == null) {
+        result.error("INVALID_ARGUMENT", "track not found", null)
+        return
+      }
+
+      if (processors.visualizers[visualizerId] != null) {
+        result.success(true)
+        return
+      }
+
+      try {
+        val visualizer = Visualizer(
+          barCount = barCount,
+          isCentered = isCentered,
+          smoothTransition = smoothTransition,
+          audioTrack = processors.track,
+          trackId = trackId,
+          binaryMessenger = binaryMessenger!!,
+          visualizerId = visualizerId
+        )
+        processors.visualizers[visualizerId] = visualizer
+        result.success(true)
+        return
+      } catch (error: Exception) {
+        lastError = error
+      }
     }
 
-    // Check if visualizer already exists
-    if (processors.visualizers[visualizerId] != null) {
-      result.success(null)
-      return
-    }
-
-    val visualizer = Visualizer(
-      barCount = barCount,
-      isCentered = isCentered,
-      smoothTransition = smoothTransition,
-      audioTrack = processors.track,
-      binaryMessenger = binaryMessenger!!,
-      visualizerId = visualizerId
+    removeAudioProcessors(trackId)
+    result.error(
+      "VISUALIZER_ERROR",
+      "Failed to attach audio visualizer: ${lastError?.message}",
+      null,
     )
-
-    processors.visualizers[visualizerId] = visualizer
-    result.success(null)
   }
 
   private fun handleStopVisualizer(@NonNull call: MethodCall, @NonNull result: Result) {
@@ -116,12 +135,12 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
       return
     }
 
-    // Find and remove visualizer from all processors
-    for (processors in audioProcessors.values) {
-      processors.visualizers[visualizerId]?.let { visualizer ->
-        visualizer.stop()
-        processors.visualizers.remove(visualizerId)
-      }
+    val processors = audioProcessors[trackId]
+    val visualizer = processors?.visualizers?.get(visualizerId)
+    visualizer?.stop()
+    processors?.visualizers?.remove(visualizerId)
+    if (processors != null && processors.visualizers.isEmpty() && processors.renderers.isEmpty()) {
+      audioProcessors.remove(trackId)
     }
 
     result.success(null)
@@ -130,9 +149,17 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
   /**
    * Get or create AudioProcessors for a given trackId
    */
-  private fun getAudioProcessors(trackId: String): AudioProcessors? {
-    // Return existing if found
-    audioProcessors[trackId]?.let { return it }
+  private fun getAudioProcessors(
+    trackId: String,
+    forceRefresh: Boolean = false,
+  ): AudioProcessors? {
+    val existing = audioProcessors[trackId]
+    if (!forceRefresh && existing != null && isAudioTrackAlive(existing.track, trackId)) {
+      return existing
+    }
+    if (existing != null) {
+      removeAudioProcessors(trackId)
+    }
 
     // Create new AudioProcessors for this track
     var audioTrack: LKAudioTrack? = null
@@ -151,6 +178,22 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
       val processors = AudioProcessors(track)
       audioProcessors[trackId] = processors
       processors
+    }
+  }
+
+  private fun isAudioTrackAlive(track: LKAudioTrack, trackId: String): Boolean =
+    try {
+      track.id() == trackId
+    } catch (_: IllegalStateException) {
+      false
+    }
+
+  private fun removeAudioProcessors(trackId: String) {
+    val processors = audioProcessors.remove(trackId) ?: return
+    try {
+      processors.cleanup()
+    } catch (error: Exception) {
+      Log.w(TAG, "Failed to clean up audio processors for $trackId", error)
     }
   }
 
@@ -221,11 +264,13 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
       return
     }
 
-    // Find and remove renderer from all processors
-    for (processors in audioProcessors.values) {
-      processors.renderers[rendererId]?.let { renderer ->
-        renderer.detach()
-        processors.renderers.remove(rendererId)
+    val iterator = audioProcessors.iterator()
+    while (iterator.hasNext()) {
+      val (_, processors) = iterator.next()
+      processors.renderers[rendererId]?.detach()
+      processors.renderers.remove(rendererId)
+      if (processors.visualizers.isEmpty() && processors.renderers.isEmpty()) {
+        iterator.remove()
       }
     }
 

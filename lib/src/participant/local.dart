@@ -671,6 +671,27 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
     await room.engine.sendDataPacket(packet, reliability: publishReliably ? Reliability.reliable : Reliability.lossy);
   }
 
+  /// Publishes a new chat message to the room.
+  ///
+  /// [ChatMessage.attachedFiles] are not sent.
+  Future<void> sendChatMessage(ChatMessage chat) async {
+    final chatMessage = lk_models.ChatMessage(
+      id: chat.id,
+      message: chat.message,
+      timestamp: Int64(chat.timestamp),
+    );
+
+    if (chat.editTimestamp != null) {
+      chatMessage.editTimestamp = Int64(chat.editTimestamp!);
+    }
+
+    final packet = lk_models.DataPacket(
+      chatMessage: chatMessage,
+    );
+
+    await room.engine.sendDataPacket(packet, reliability: Reliability.reliable);
+  }
+
   /// Sets and updates the metadata of the local participant.
   /// Note: this requires `CanUpdateOwnMetadata` permission encoded in the token.
   /// @param metadata

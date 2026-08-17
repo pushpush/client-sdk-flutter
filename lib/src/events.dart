@@ -24,6 +24,7 @@ import 'publication/track_publication.dart';
 import 'stats/stats.dart';
 import 'track/processor.dart';
 import 'track/track.dart';
+import 'types/data_stream.dart';
 import 'types/other.dart';
 import 'types/participant_permissions.dart';
 import 'types/participant_state.dart' show ParticipantState;
@@ -462,6 +463,23 @@ class DataReceivedEvent with RoomEvent, ParticipantEvent {
   String toString() =>
       '${runtimeType}'
       '(participant: ${participant}, topic: ${topic}, data: ${data})';
+}
+
+/// Chat message from [RemoteParticipant].
+/// Emitted by [Room] and [RemoteParticipant].
+class ChatMessageEvent with RoomEvent, ParticipantEvent {
+  /// Sender of the data. This may be null if data is sent from Server API.
+  final RemoteParticipant? participant;
+  final ChatMessage chatMessage;
+  const ChatMessageEvent({
+    required this.participant,
+    required this.chatMessage,
+  });
+
+  @override
+  String toString() =>
+      '${runtimeType}'
+      '(participant: ${participant}, chatMessage: ${chatMessage})';
 }
 
 /// The participant's isSpeaking property has changed

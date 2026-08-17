@@ -1,0 +1,1 @@
+minor type="added" "LocalParticipant.sendChatMessage() plus ChatMessageEvent on Room and RemoteParticipant for incoming chat data packets"

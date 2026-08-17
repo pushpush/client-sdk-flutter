@@ -18,6 +18,7 @@ package io.livekit.plugin
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import org.webrtc.AudioTrack
@@ -46,9 +47,22 @@ class Visualizer(
     private var audioFormat = AudioFormat(16, 48000, 1)
 
     fun stop() {
-        audioTrack?.removeSink(this)
-        eventChannel?.setStreamHandler(null)
-        ffiAudioAnalyzer.release()
+        val track = audioTrack ?: return
+        audioTrack = null
+
+        try {
+            track.removeSink(this)
+        } catch (error: IllegalStateException) {
+            Log.w(TAG, "Audio track was disposed before visualizer cleanup", error)
+        }
+
+        try {
+            eventSink = null
+            eventChannel?.setStreamHandler(null)
+        } finally {
+            eventChannel = null
+            ffiAudioAnalyzer.release()
+        }
     }
 
     override fun onData(
@@ -112,6 +126,10 @@ class Visualizer(
         audioTrack.addSink(this)
         eventChannel = EventChannel(binaryMessenger, "io.livekit.audio.visualizer/eventChannel-$trackId-$visualizerId")
         eventChannel?.setStreamHandler(this)
+    }
+
+    companion object {
+        private const val TAG = "LKVisualizer"
     }
 }
 

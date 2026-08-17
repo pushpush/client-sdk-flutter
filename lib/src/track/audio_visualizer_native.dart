@@ -18,6 +18,9 @@ class AudioVisualizerNative extends AudioVisualizer {
 
   MediaStreamTrack get mediaStreamTrack => _audioTrack!.mediaStreamTrack;
 
+  @override
+  bool get isStarted => _eventChannel != null;
+
   AudioVisualizerNative(this._audioTrack, {required this.visualizerOptions}) {
     onDispose(() async {
       await events.dispose();
@@ -30,13 +33,17 @@ class AudioVisualizerNative extends AudioVisualizer {
       return;
     }
 
-    await Native.startVisualizer(
+    final started = await Native.startVisualizer(
       mediaStreamTrack.id!,
       isCentered: visualizerOptions.centeredBands,
       barCount: visualizerOptions.barCount,
       visualizerId: visualizerId,
       smoothTransition: visualizerOptions.smoothTransition,
     );
+    if (!started) {
+      await Native.stopVisualizer(mediaStreamTrack.id!, visualizerId: visualizerId);
+      return;
+    }
 
     _eventChannel = EventChannel('io.livekit.audio.visualizer/eventChannel-${mediaStreamTrack.id}-$visualizerId');
     _streamSubscription = _eventChannel?.receiveBroadcastStream().listen((event) {

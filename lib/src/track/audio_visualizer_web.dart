@@ -20,6 +20,9 @@ class AudioVisualizerWeb extends AudioVisualizer {
 
   final AudioVisualizerOptions visualizerOptions;
 
+  @override
+  bool get isStarted => _audioAnalyser != null;
+
   AudioVisualizerWeb(this._audioTrack, {required this.visualizerOptions}) {
     onDispose(() async {
       await events.dispose();

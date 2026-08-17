@@ -23,6 +23,9 @@ abstract class AudioVisualizer extends DisposableChangeNotifier with EventsEmitt
   // Unique Id for each visualizer
   final String visualizerId = _uuid.v4();
 
+  /// Whether the visualizer is attached to its audio source.
+  bool get isStarted => false;
+
   Future<void> start();
   Future<void> stop();
 }

@@ -22,6 +22,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import com.twilio.audioswitch.AbstractAudioSwitch
 import com.twilio.audioswitch.AudioDevice
 import com.twilio.audioswitch.AudioSwitch
@@ -46,6 +47,7 @@ internal class LKAudioSwitchManager(private val context: Context) {
   // queued lifecycle work stays serialized on this thread.
   private val thread = HandlerThread("LKAudioSwitchThread").also { it.start() }
   private val handler = Handler(thread.looper)
+  private val mainHandler = Handler(Looper.getMainLooper())
 
   private var audioSwitch: AbstractAudioSwitch? = null
   private var isActive = false
@@ -62,6 +64,27 @@ internal class LKAudioSwitchManager(private val context: Context) {
 
   private var speakerOutputPreferred = true
   private var speakerOutputForced = false
+
+  // Sticky user selection. When non-null, applied on every switch (re)creation
+  // and after every deactivate/activate cycle so a live reconfigure does not
+  // drop the user's choice. `null` means "no explicit selection yet, follow
+  // the preferred-device list".
+  private var selectedDeviceKind: String? = null
+
+  // Snapshot of the last (available, selected) reported by AudioSwitch. Read
+  // by `devicesSnapshot()` and pushed out via [deviceChangeListener].
+  @Volatile
+  private var lastDevices: List<AudioDevice> = emptyList()
+
+  @Volatile
+  private var lastSelected: AudioDevice? = null
+
+  /**
+   * Listener invoked on the main thread whenever the AudioSwitch device list
+   * or the current selection changes. Set from the plugin to forward events
+   * to a Flutter EventChannel. Not thread-safe against a second listener.
+   */
+  var deviceChangeListener: ((Map<String, Any?>) -> Unit)? = null
 
   /**
    * Apply an audio session configuration. Unspecified keys keep their current
@@ -93,6 +116,10 @@ internal class LKAudioSwitchManager(private val context: Context) {
         switch.deactivate()
         switch.activate()
         applySpeakerRouting(switch, speakerRouting)
+        // deactivate/activate resets the internal selection state on some
+        // AudioSwitch backends, so re-apply the sticky user selection so a
+        // live reconfigure does not silently drop the user's choice.
+        applyStickySelection(switch)
       }
     }
   }
@@ -120,6 +147,7 @@ internal class LKAudioSwitchManager(private val context: Context) {
       if (!isActive) {
         switch.activate()
         applySpeakerRouting(switch, speakerRouting)
+        applyStickySelection(switch)
         isActive = true
       }
     }
@@ -132,6 +160,8 @@ internal class LKAudioSwitchManager(private val context: Context) {
       audioSwitch?.stop()
       audioSwitch = null
       isActive = false
+      lastDevices = emptyList()
+      lastSelected = null
     }
   }
 
@@ -142,6 +172,9 @@ internal class LKAudioSwitchManager(private val context: Context) {
       audioSwitch?.stop()
       audioSwitch = null
       isActive = false
+      lastDevices = emptyList()
+      lastSelected = null
+      deviceChangeListener = null
       thread.quitSafely()
     }
   }
@@ -160,6 +193,37 @@ internal class LKAudioSwitchManager(private val context: Context) {
       applySpeakerRouting(switch, speakerRouting)
     }
   }
+
+  /**
+   * Explicitly route audio playout to the device matching [kind].
+   *
+   * [kind] is one of `bluetooth`, `wired`, `speaker`, `earpiece`. The
+   * selection is sticky: it is re-applied after a live reconfigure
+   * (deactivate/activate cycle) and after the underlying AudioSwitch is
+   * recreated on the next [start]. If no matching device is currently
+   * available the latch is still updated so a later hot-plug picks it up;
+   * `selectDevice` is not called with a null device because `AudioSwitch`
+   * treats that as "select no device" rather than "fall back to auto".
+   */
+  @Synchronized
+  fun selectDevice(kind: String) {
+    // Unknown kinds are not latched: applyStickySelection could never match
+    // them, and the stale latch would block the preferred-device fallback.
+    if (deviceClassForKind(kind) == null) return
+    selectedDeviceKind = kind
+    handler.post {
+      val switch = audioSwitch ?: return@post
+      applyStickySelection(switch)
+    }
+  }
+
+  /**
+   * Snapshot of the last known device list and current selection. Returned as
+   * a Flutter-friendly map so it can be sent through a MethodChannel result
+   * or an EventChannel event.
+   */
+  @Synchronized
+  fun devicesSnapshot(): Map<String, Any?> = buildSnapshot(lastDevices, lastSelected)
 
   private fun createSwitch(
     sessionConfig: SessionConfig,
@@ -180,8 +244,59 @@ internal class LKAudioSwitchManager(private val context: Context) {
         LegacyAudioSwitch(context, false, focusListener, speakerRouting.preferredDeviceList)
     }
     applyConfiguration(switch, sessionConfig)
-    switch.start { _, _ -> }
+    switch.start { devices, selected -> onDeviceChange(devices, selected) }
+    applyStickySelection(switch)
     return switch
+  }
+
+  private fun onDeviceChange(devices: List<AudioDevice>, selected: AudioDevice?) {
+    lastDevices = devices
+    lastSelected = selected
+    val snapshot = buildSnapshot(devices, selected)
+    // Deliver on the main thread so the Flutter EventChannel receives events
+    // on the platform message loop.
+    mainHandler.post {
+      deviceChangeListener?.invoke(snapshot)
+    }
+  }
+
+  private fun applyStickySelection(switch: AbstractAudioSwitch) {
+    val kind = selectedDeviceKind ?: return
+    val deviceClass = deviceClassForKind(kind) ?: return
+    val available = switch.availableAudioDevices
+    // Only call selectDevice when we have a matching physical device.
+    // AudioSwitch treats selectDevice(null) as "select no device", not "auto".
+    val target = available.firstOrNull { it.javaClass == deviceClass } ?: return
+    switch.selectDevice(target)
+  }
+
+  private fun buildSnapshot(
+    devices: List<AudioDevice>,
+    selected: AudioDevice?,
+  ): Map<String, Any?> = mapOf(
+    "available" to devices.map { deviceMap(it) },
+    "selected" to selected?.let { deviceMap(it) },
+    "userSelected" to selectedDeviceKind,
+  )
+
+  private fun deviceMap(device: AudioDevice): Map<String, Any?> = mapOf(
+    "kind" to kindForDevice(device),
+    "name" to device.name,
+  )
+
+  private fun kindForDevice(device: AudioDevice): String = when (device) {
+    is AudioDevice.BluetoothHeadset -> "bluetooth"
+    is AudioDevice.WiredHeadset -> "wired"
+    is AudioDevice.Speakerphone -> "speaker"
+    is AudioDevice.Earpiece -> "earpiece"
+  }
+
+  private fun deviceClassForKind(kind: String): Class<out AudioDevice>? = when (kind) {
+    "bluetooth" -> AudioDevice.BluetoothHeadset::class.java
+    "wired" -> AudioDevice.WiredHeadset::class.java
+    "speaker" -> AudioDevice.Speakerphone::class.java
+    "earpiece" -> AudioDevice.Earpiece::class.java
+    else -> null
   }
 
   private fun applyConfiguration(switch: AbstractAudioSwitch, sessionConfig: SessionConfig) {

@@ -30,6 +30,7 @@ class Visualizer(
     private var isCentered: Boolean,
     private var smoothTransition: Boolean,
     audioTrack: LKAudioTrack,
+    trackId: String,
     binaryMessenger: BinaryMessenger,
     visualizerId: String
 ) : EventChannel.StreamHandler, AudioTrackSink {
@@ -106,11 +107,11 @@ class Visualizer(
     }
 
     init {
-        eventChannel = EventChannel(binaryMessenger, "io.livekit.audio.visualizer/eventChannel-" + audioTrack.id() + "-" + visualizerId)
-        eventChannel?.setStreamHandler(this)
         bands = FloatArray(barCount)
         ffiAudioAnalyzer.configure(audioFormat)
         audioTrack.addSink(this)
+        eventChannel = EventChannel(binaryMessenger, "io.livekit.audio.visualizer/eventChannel-$trackId-$visualizerId")
+        eventChannel?.setStreamHandler(this)
     }
 }
 

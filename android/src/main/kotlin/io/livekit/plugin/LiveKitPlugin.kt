@@ -129,6 +129,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
       isCentered = isCentered,
       smoothTransition = smoothTransition,
       audioTrack = processors.track,
+      trackId = trackId,
       binaryMessenger = binaryMessenger!!,
       visualizerId = visualizerId
     )

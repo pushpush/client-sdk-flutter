@@ -60,8 +60,13 @@ class AudioRenderer(
 
   fun detach() {
     if (isAttached) {
-      audioTrack.removeSink(this)
-      isAttached = false
+      try {
+        audioTrack.removeSink(this)
+      } catch (error: IllegalStateException) {
+        Log.w(TAG, "Audio track was disposed before renderer cleanup", error)
+      } finally {
+        isAttached = false
+      }
     }
     eventChannel?.setStreamHandler(null)
     eventSink = null

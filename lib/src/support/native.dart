@@ -14,16 +14,15 @@
 
 import 'dart:async';
 
-import 'package:flutter/services.dart'
-    show EventChannel, MethodChannel, MethodCall, MissingPluginException, PlatformException;
-
 import 'package:meta/meta.dart';
 
 import '../audio/audio_manager.dart';
 import '../logger.dart';
 import '../managers/broadcast_manager.dart';
 import 'native_audio.dart';
-import 'platform.dart';
+
+import 'package:flutter/services.dart'
+    show EventChannel, MethodChannel, MethodCall, MissingPluginException, PlatformException;
 
 // Method channel methods to call native code.
 class Native {
@@ -224,11 +223,8 @@ class Native {
   /// `Room.connect` runs `NativeAudioManagement.start()` (e.g. a lobby preview
   /// microphone) use this so `MODE_IN_COMMUNICATION`, audio focus, and
   /// AudioSwitch device routing are in effect while the mic is capturing.
-  ///
-  /// No-op on platforms other than Android.
   @internal
   static Future<void> activateAndroidAudioSession() async {
-    if (!lkPlatformIs(PlatformType.android)) return;
     try {
       await channel.invokeMethod<void>('activateAndroidAudioSession');
     } catch (error) {
@@ -246,11 +242,8 @@ class Native {
   /// user's intent. `kind` must correspond to a physical device; calling
   /// this with a kind that is not available leaves the request in the
   /// latch so it is honored the moment the device attaches.
-  ///
-  /// No-op on platforms other than Android.
   @internal
   static Future<void> selectAndroidAudioOutput(String kind) async {
-    if (!lkPlatformIs(PlatformType.android)) return;
     try {
       await channel.invokeMethod<void>(
         'selectAndroidAudioDevice',
@@ -264,11 +257,9 @@ class Native {
   /// Reads the current Android AudioSwitch snapshot: available devices and
   /// the currently selected device, along with the sticky user selection.
   ///
-  /// Returns an empty map when unavailable or when called on another
-  /// platform.
+  /// Returns an empty map when unavailable.
   @internal
   static Future<Map<String, dynamic>> getAndroidAudioDevices() async {
-    if (!lkPlatformIs(PlatformType.android)) return const <String, dynamic>{};
     try {
       final response = await channel.invokeMethod<dynamic>('getAndroidAudioDevices');
       if (response is Map) {

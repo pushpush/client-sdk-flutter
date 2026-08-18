@@ -14,6 +14,7 @@
 
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
 import '../logger.dart';
@@ -445,7 +446,10 @@ class AudioManager {
   /// AudioSwitch device routing while a lobby preview microphone is running.
   ///
   /// No-op on other platforms.
-  Future<void> activateAndroidAudioSession() => Native.activateAndroidAudioSession();
+  Future<void> activateAndroidAudioSession() async {
+    if (!lkPlatformIs(PlatformType.android)) return;
+    await Native.activateAndroidAudioSession();
+  }
 
   /// Releases LiveKit's Android audio session (audio focus, communication
   /// mode, and AudioSwitch device routing). Unlike [deactivateAudioSession]
@@ -468,16 +472,21 @@ class AudioManager {
   /// it activates the moment the device attaches.
   ///
   /// No-op on other platforms.
-  Future<void> selectAndroidAudioOutput(AndroidAudioDeviceKind kind) => Native.selectAndroidAudioOutput(kind.wire);
+  Future<void> selectAndroidAudioOutput(AndroidAudioDeviceKind kind) async {
+    if (!lkPlatformIs(PlatformType.android)) return;
+    await Native.selectAndroidAudioOutput(kind.wire);
+  }
 
   /// Reads the current AudioSwitch snapshot on Android.
   ///
   /// Returns an [AndroidAudioDevices] with the available device kinds, the
-  /// currently active output, and the sticky user selection. Empty on other
-  /// platforms.
+  /// currently active output, and the sticky user selection. On an inactive
+  /// Android audio session, [AndroidAudioDevices.available] is empty while
+  /// [AndroidAudioDevices.userSelected] keeps the last explicit selection.
+  /// Returns an empty snapshot on other platforms.
   Future<AndroidAudioDevices> getAndroidAudioDevices() async {
-    final map = await Native.getAndroidAudioDevices();
-    return AndroidAudioDevices.fromMap(map);
+    if (!lkPlatformIs(PlatformType.android)) return const AndroidAudioDevices.empty();
+    return AndroidAudioDevices.fromMap(await Native.getAndroidAudioDevices());
   }
 
   /// Broadcast stream of AudioSwitch snapshots on Android. The stream is a
@@ -534,6 +543,12 @@ class AndroidAudioDevice {
 
   @override
   String toString() => 'AndroidAudioDevice(kind: ${kind.wire}, name: $name)';
+
+  @override
+  bool operator ==(Object other) => other is AndroidAudioDevice && other.kind == kind && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(kind, name);
 }
 
 /// Snapshot of the current AudioSwitch state on Android.
@@ -570,4 +585,18 @@ class AndroidAudioDevices {
       userSelected: AndroidAudioDeviceKind.fromWire(map['userSelected']?.toString()),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is AndroidAudioDevices &&
+      other.selected == selected &&
+      other.userSelected == userSelected &&
+      const ListEquality<AndroidAudioDevice>().equals(other.available, available);
+
+  @override
+  int get hashCode => Object.hash(Object.hashAll(available), selected, userSelected);
+
+  @override
+  String toString() =>
+      'AndroidAudioDevices(available: $available, selected: $selected, userSelected: ${userSelected?.wire})';
 }

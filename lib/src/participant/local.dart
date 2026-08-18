@@ -675,6 +675,10 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
   ///
   /// [ChatMessage.attachedFiles] are not sent.
   Future<void> sendChatMessage(ChatMessage chat) async {
+    if (chat.attachedFiles.isNotEmpty) {
+      logger.warning('sendChatMessage: ChatMessage.attachedFiles are not sent');
+    }
+
     final chatMessage = lk_models.ChatMessage(
       id: chat.id,
       message: chat.message,
@@ -686,6 +690,7 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
     }
 
     final packet = lk_models.DataPacket(
+      kind: lk_models.DataPacket_Kind.RELIABLE,
       chatMessage: chatMessage,
     );
 

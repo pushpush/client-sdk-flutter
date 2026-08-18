@@ -1,0 +1,1 @@
+minor type="added" "Android audio session control: AudioManager.activateAndroidAudioSession/deactivateAndroidAudioSession, sticky output routing via selectAndroidAudioOutput, plus getAndroidAudioDevices and androidAudioDevicesStream snapshots"

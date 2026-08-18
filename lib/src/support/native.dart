@@ -14,7 +14,8 @@
 
 import 'dart:async';
 
-import 'package:flutter/services.dart' show MethodChannel, MethodCall, MissingPluginException, PlatformException;
+import 'package:flutter/services.dart'
+    show EventChannel, MethodChannel, MethodCall, MissingPluginException, PlatformException;
 
 import 'package:meta/meta.dart';
 
@@ -22,6 +23,7 @@ import '../audio/audio_manager.dart';
 import '../logger.dart';
 import '../managers/broadcast_manager.dart';
 import 'native_audio.dart';
+import 'platform.dart';
 
 // Method channel methods to call native code.
 class Native {
@@ -216,6 +218,70 @@ class Native {
       logger.warning('setAndroidSpeakerphoneOn did throw $error');
     }
   }
+
+  /// Idempotently activates LiveKit's Android audio session without touching
+  /// its current configuration. Callers that want to own the session before
+  /// `Room.connect` runs `NativeAudioManagement.start()` (e.g. a lobby preview
+  /// microphone) use this so `MODE_IN_COMMUNICATION`, audio focus, and
+  /// AudioSwitch device routing are in effect while the mic is capturing.
+  ///
+  /// No-op on platforms other than Android.
+  @internal
+  static Future<void> activateAndroidAudioSession() async {
+    if (!lkPlatformIs(PlatformType.android)) return;
+    try {
+      await channel.invokeMethod<void>('activateAndroidAudioSession');
+    } catch (error) {
+      logger.warning('activateAndroidAudioSession did throw $error');
+    }
+  }
+
+  /// Explicitly routes Android audio playout to the device kind [kind]
+  /// (`bluetooth`/`wired`/`speaker`/`earpiece`).
+  ///
+  /// The selection is sticky inside LiveKit's `LKAudioSwitchManager`: it is
+  /// re-applied after a live reconfigure or a switch recreation, and is
+  /// preserved across hot-plug so that if the selected device disappears
+  /// AudioSwitch falls back to the preferred list without dropping the
+  /// user's intent. `kind` must correspond to a physical device; calling
+  /// this with a kind that is not available leaves the request in the
+  /// latch so it is honored the moment the device attaches.
+  ///
+  /// No-op on platforms other than Android.
+  @internal
+  static Future<void> selectAndroidAudioOutput(String kind) async {
+    if (!lkPlatformIs(PlatformType.android)) return;
+    try {
+      await channel.invokeMethod<void>(
+        'selectAndroidAudioDevice',
+        <String, dynamic>{'kind': kind},
+      );
+    } catch (error) {
+      logger.warning('selectAndroidAudioOutput did throw $error');
+    }
+  }
+
+  /// Reads the current Android AudioSwitch snapshot: available devices and
+  /// the currently selected device, along with the sticky user selection.
+  ///
+  /// Returns an empty map when unavailable or when called on another
+  /// platform.
+  @internal
+  static Future<Map<String, dynamic>> getAndroidAudioDevices() async {
+    if (!lkPlatformIs(PlatformType.android)) return const <String, dynamic>{};
+    try {
+      final response = await channel.invokeMethod<dynamic>('getAndroidAudioDevices');
+      if (response is Map) {
+        return response.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (error) {
+      logger.warning('getAndroidAudioDevices did throw $error');
+    }
+    return const <String, dynamic>{};
+  }
+
+  @internal
+  static const EventChannel androidAudioDevicesEventChannel = EventChannel('livekit_client/android_audio_devices');
 
   /// Enable or disable LiveKit's automatic iOS audio-session management from
   /// native WebRTC audio-engine lifecycle callbacks.

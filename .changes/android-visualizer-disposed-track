@@ -1,0 +1,1 @@
+patch type="fixed" "Android audio visualizers now recover from disposed remote tracks without leaving broken event channel subscriptions"

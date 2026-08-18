@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show EventChannel;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../events.dart' show AudioVisualizerEvent;
+import '../logger.dart' show logger;
 import '../support/native.dart' show Native;
 import '../track/local/local.dart';
 import 'audio_visualizer.dart';
@@ -30,13 +31,18 @@ class AudioVisualizerNative extends AudioVisualizer {
       return;
     }
 
-    await Native.startVisualizer(
+    final started = await Native.startVisualizer(
       mediaStreamTrack.id!,
       isCentered: visualizerOptions.centeredBands,
       barCount: visualizerOptions.barCount,
       visualizerId: visualizerId,
       smoothTransition: visualizerOptions.smoothTransition,
     );
+    if (!started) {
+      logger.warning('startVisualizer failed for track ${mediaStreamTrack.id}, skipping event channel subscription');
+      await Native.stopVisualizer(mediaStreamTrack.id!, visualizerId: visualizerId);
+      return;
+    }
 
     _eventChannel = EventChannel('io.livekit.audio.visualizer/eventChannel-${mediaStreamTrack.id}-$visualizerId');
     _streamSubscription = _eventChannel?.receiveBroadcastStream().listen((event) {

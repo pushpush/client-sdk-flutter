@@ -1047,7 +1047,10 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
     // participant may be null if data is sent from Server-API
     RemoteParticipant? senderParticipant;
     if (chatMessageEvent.identity.isNotEmpty) {
-      senderParticipant = getParticipantByIdentity(chatMessageEvent.identity) as RemoteParticipant?;
+      final participant = getParticipantByIdentity(chatMessageEvent.identity);
+      if (participant is RemoteParticipant) {
+        senderParticipant = participant;
+      }
     }
 
     final chatMessage = chatMessageEvent.chatMessage;

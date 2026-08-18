@@ -502,8 +502,13 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         val kind = call.argument<String>("kind")
         if (kind == null) {
           result.error("INVALID_ARGUMENT", "kind is required", null)
+        } else if (audioSwitchManager?.selectDevice(kind) != true) {
+          result.error(
+            "INVALID_ARGUMENT",
+            "Unsupported Android audio device kind: $kind",
+            null,
+          )
         } else {
-          audioSwitchManager?.selectDevice(kind)
           result.success(null)
         }
       }

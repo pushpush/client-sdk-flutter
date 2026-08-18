@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'package:flutter/services.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:livekit_client/src/audio/audio_manager.dart';
+import 'package:livekit_client/src/support/native.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('AndroidAudioDevices', () {
     test('parses a device snapshot and preserves available-device order', () {
       final devices = AndroidAudioDevices.fromMap({
@@ -73,6 +77,24 @@ void main() {
         throwsUnsupportedError,
       );
     });
+
+    test('compares snapshots by value so unchanged updates can be filtered', () {
+      Map<String, dynamic> snapshot({required String selected}) => {
+        'available': [
+          {'kind': 'bluetooth', 'name': 'Headset'},
+          {'kind': 'speaker', 'name': 'Speakerphone'},
+        ],
+        'selected': {'kind': selected, 'name': 'Headset'},
+        'userSelected': 'bluetooth',
+      };
+
+      final devices = AndroidAudioDevices.fromMap(snapshot(selected: 'bluetooth'));
+
+      expect(devices, AndroidAudioDevices.fromMap(snapshot(selected: 'bluetooth')));
+      expect(devices.hashCode, AndroidAudioDevices.fromMap(snapshot(selected: 'bluetooth')).hashCode);
+      expect(devices, isNot(AndroidAudioDevices.fromMap(snapshot(selected: 'speaker'))));
+      expect(devices, isNot(const AndroidAudioDevices.empty()));
+    });
   });
 
   test('AndroidAudioDeviceKind maps known wire values', () {
@@ -81,5 +103,78 @@ void main() {
     }
     expect(AndroidAudioDeviceKind.fromWire('unknown'), isNull);
     expect(AndroidAudioDeviceKind.fromWire(null), isNull);
+  });
+
+  group('Android audio device channel', () {
+    late List<MethodCall> calls;
+
+    setUp(() {
+      calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        Native.channel,
+        (call) async {
+          calls.add(call);
+          if (call.method == 'getAndroidAudioDevices') {
+            return <Object?, Object?>{
+              'available': [
+                <Object?, Object?>{'kind': 'earpiece', 'name': 'Earpiece'},
+              ],
+              'selected': <Object?, Object?>{'kind': 'earpiece', 'name': 'Earpiece'},
+              'userSelected': 'earpiece',
+            };
+          }
+          return null;
+        },
+      );
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        Native.channel,
+        null,
+      );
+    });
+
+    test('activates the Android audio session through the platform method', () async {
+      await Native.activateAndroidAudioSession();
+
+      expect(calls.single.method, 'activateAndroidAudioSession');
+      expect(calls.single.arguments, isNull);
+    });
+
+    test('passes the requested output device kind to the platform method', () async {
+      await Native.selectAndroidAudioOutput(AndroidAudioDeviceKind.bluetooth.wire);
+
+      expect(calls.single.method, 'selectAndroidAudioDevice');
+      expect(calls.single.arguments, {'kind': 'bluetooth'});
+    });
+
+    test('reads the device snapshot from the platform method', () async {
+      final devices = AndroidAudioDevices.fromMap(await Native.getAndroidAudioDevices());
+
+      expect(calls.single.method, 'getAndroidAudioDevices');
+      expect(devices.available, [const AndroidAudioDevice(kind: AndroidAudioDeviceKind.earpiece, name: 'Earpiece')]);
+      expect(devices.selected?.kind, AndroidAudioDeviceKind.earpiece);
+      expect(devices.userSelected, AndroidAudioDeviceKind.earpiece);
+    });
+
+    test('returns an empty snapshot when the platform call fails', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        Native.channel,
+        (call) async => throw PlatformException(code: 'nativeFailure'),
+      );
+
+      expect(await Native.getAndroidAudioDevices(), isEmpty);
+    });
+
+    test('Android-only APIs are no-ops on other platforms', () async {
+      await AudioManager.instance.activateAndroidAudioSession();
+      await AudioManager.instance.deactivateAndroidAudioSession();
+      await AudioManager.instance.selectAndroidAudioOutput(AndroidAudioDeviceKind.speaker);
+
+      expect(await AudioManager.instance.getAndroidAudioDevices(), const AndroidAudioDevices.empty());
+      expect(await AudioManager.instance.androidAudioDevicesStream.toList(), isEmpty);
+      expect(calls, isEmpty);
+    });
   });
 }

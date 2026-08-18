@@ -16,6 +16,8 @@
 
 package io.livekit.plugin
 
+import android.util.Log
+
 /**
  * Container for managing audio processors (renderers and visualizers) for a specific audio track
  * Similar to iOS AudioProcessors implementation
@@ -23,6 +25,10 @@ package io.livekit.plugin
 class AudioProcessors(
   val track: LKAudioTrack
 ) {
+  companion object {
+    private const val TAG = "LKAudioProcessors"
+  }
+
   val renderers = mutableMapOf<String, AudioRenderer>()
   val visualizers = mutableMapOf<String, Visualizer>()
 
@@ -30,10 +36,22 @@ class AudioProcessors(
    * Clean up all processors and release resources
    */
   fun cleanup() {
-    renderers.values.forEach { it.detach() }
+    renderers.values.toList().forEach { renderer ->
+      try {
+        renderer.detach()
+      } catch (error: Throwable) {
+        Log.w(TAG, "Failed to detach audio renderer", error)
+      }
+    }
     renderers.clear()
 
-    visualizers.values.forEach { it.stop() }
+    visualizers.values.toList().forEach { visualizer ->
+      try {
+        visualizer.stop()
+      } catch (error: Throwable) {
+        Log.w(TAG, "Failed to stop audio visualizer", error)
+      }
+    }
     visualizers.clear()
   }
 }

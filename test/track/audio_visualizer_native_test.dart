@@ -64,9 +64,59 @@ void main() {
     );
 
     await visualizer.start();
+    await visualizer.stop();
 
     expect(nativeCalls.map((call) => call.method), ['startVisualizer', 'stopVisualizer']);
     expect(eventCalls, isEmpty);
+  });
+
+  test('subscribes when native visualizer startup succeeds', () async {
+    final nativeCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(Native.channel, (
+      call,
+    ) async {
+      nativeCalls.add(call);
+      return call.method == 'startVisualizer' ? true : null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        Native.channel,
+        null,
+      ),
+    );
+
+    final visualizer = AudioVisualizerNative(
+      _FakeAudioTrack(),
+      visualizerOptions: const AudioVisualizerOptions(),
+    );
+    addTearDown(visualizer.dispose);
+
+    final eventCalls = <MethodCall>[];
+    final eventChannel = MethodChannel(
+      'io.livekit.audio.visualizer/eventChannel-audio-track-${visualizer.visualizerId}',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(eventChannel, (
+      call,
+    ) async {
+      eventCalls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        eventChannel,
+        null,
+      ),
+    );
+
+    await visualizer.start();
+
+    expect(nativeCalls.map((call) => call.method), ['startVisualizer']);
+    expect(eventCalls.map((call) => call.method), ['listen']);
+
+    await visualizer.stop();
+
+    expect(nativeCalls.map((call) => call.method), ['startVisualizer', 'stopVisualizer']);
+    expect(eventCalls.map((call) => call.method), ['listen', 'cancel']);
   });
 }
 

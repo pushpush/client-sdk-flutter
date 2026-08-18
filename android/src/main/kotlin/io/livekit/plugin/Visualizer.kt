@@ -37,7 +37,10 @@ class Visualizer(
 ) : EventChannel.StreamHandler, AudioTrackSink {
     private var eventChannel: EventChannel? = null
     private var eventSink: EventChannel.EventSink? = null
-    private var ffiAudioAnalyzer = FFTAudioAnalyzer()
+    private val ffiAudioAnalyzer = FFTAudioAnalyzer()
+    private val analyzerLock = Any()
+    @Volatile
+    private var isStopped = false
     private var audioTrack: LKAudioTrack? = audioTrack
     private var amplitudes: FloatArray = FloatArray(0)
     private var bands: FloatArray
@@ -47,8 +50,14 @@ class Visualizer(
     private var audioFormat = AudioFormat(16, 48000, 1)
 
     fun stop() {
-        val track = audioTrack ?: return
-        audioTrack = null
+        val track = synchronized(analyzerLock) {
+            if (isStopped) return
+            isStopped = true
+            val currentTrack = audioTrack ?: return
+            audioTrack = null
+            ffiAudioAnalyzer.release()
+            currentTrack
+        }
 
         try {
             track.removeSink(this)
@@ -61,7 +70,6 @@ class Visualizer(
             eventChannel?.setStreamHandler(null)
         } finally {
             eventChannel = null
-            ffiAudioAnalyzer.release()
         }
     }
 
@@ -74,13 +82,16 @@ class Visualizer(
         absoluteCaptureTimestampMs: Long
     ) {
 
-        if (audioFormat.sampleRate != sampleRate || audioFormat.bitsPerSample != bitsPerSample || audioFormat.numberOfChannels != numberOfChannels) {
-            audioFormat = AudioFormat(bitsPerSample, sampleRate, numberOfChannels)
-            ffiAudioAnalyzer.configure(audioFormat)
-        }
+        val fft = synchronized(analyzerLock) {
+            if (isStopped) return
+            if (audioFormat.sampleRate != sampleRate || audioFormat.bitsPerSample != bitsPerSample || audioFormat.numberOfChannels != numberOfChannels) {
+                audioFormat = AudioFormat(bitsPerSample, sampleRate, numberOfChannels)
+                ffiAudioAnalyzer.configure(audioFormat)
+            }
 
-        ffiAudioAnalyzer.queueInput(audioData)
-        val fft: FloatArray = ffiAudioAnalyzer.fft ?: return
+            ffiAudioAnalyzer.queueInput(audioData)
+            ffiAudioAnalyzer.fft?.clone() ?: return
+        }
 
         val averages = FloatArray(barCount)
 
